@@ -5,6 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "ats": "tsx src/cli/run.ts",
+    "ats:local": "ATS_MODE=local tsx src/cli/run.ts",
+    "ats:portfolio": "ATS_MODE=portfolio tsx src/cli/run.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test"
@@ -14,6 +17,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "portfolio-backend": "file:../portfolio/backend",
     "zod": "^4.3.6"
   },
   "devDependencies": {

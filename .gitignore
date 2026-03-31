@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# Local outputs
+report*.json
+/reports/
+/sampleJD/
+# Cursor
+.cursor/
+# OS
+.DS_Store

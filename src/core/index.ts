@@ -6,4 +6,6 @@ export * from "./resume/types.js";
 export * from "./roles/taxonomy.js";
 export * from "./roles/classifyWithLLM.js";
 export * from "./jd/fitWithLLM.js";
+export * from "./jd/fitDeterministic.js";
+export * from "./jd/semanticFit.js";
 
