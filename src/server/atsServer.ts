@@ -97,7 +97,10 @@ async function gatherRuntimeStatus(): Promise<{
   try {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 4000);
-    const r = await fetch(`${ollamaBaseUrl}/api/tags`, { signal: ac.signal });
+    const r = await fetch(`${ollamaBaseUrl}/api/tags`, {
+        signal: ac.signal,
+        headers: { "Connection": "close" }
+    });
     clearTimeout(t);
     ollamaReachable = r.ok;
     if (r.ok) {

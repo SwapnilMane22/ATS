@@ -10,7 +10,7 @@
     "ats:local": "ATS_MODE=local tsx src/cli/run.ts",
     "ats:portfolio": "ATS_MODE=portfolio tsx src/cli/run.ts",
     "ats:serve": "tsx src/server/atsServer.ts",
-    "ui:build": "npm run build --prefix ui",
+    "ui:build": "npm install --prefix ui && npm run build --prefix ui",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test"

@@ -32,7 +32,7 @@ export async function resolveCandidateName(opts: {
   knowledgeJsonPath: string;
 }): Promise<ResolvedCandidateName> {
   try {
-    const raw = await fs.readFile(opts.knowledgeJsonPath, "utf8");
+    const raw = (await fs.readFile(opts.knowledgeJsonPath, "utf8")).replace(/^\uFEFF/, "");
     const k = JSON.parse(raw) as { about?: { name?: string } };
     const name = k.about?.name;
     if (typeof name === "string" && name.trim()) {

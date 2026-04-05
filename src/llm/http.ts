@@ -25,6 +25,7 @@ export async function postJson<T>(
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "Connection": "close",
         ...headers,
       },
       body: JSON.stringify(body),

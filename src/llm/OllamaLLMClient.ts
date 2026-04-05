@@ -52,7 +52,10 @@ export class OllamaLLMClient extends AbstractLLMClient {
     const unique = [...new Set(ordered)];
     if (unique.length <= 1) return unique;
     try {
-      const tagsRes = await fetch(`${this.baseUrl}/api/tags`, { method: "GET" });
+      const tagsRes = await fetch(`${this.baseUrl}/api/tags`, {
+          method: "GET",
+          headers: { "Connection": "close" }
+      });
       if (!tagsRes.ok) return unique;
       const tags = (await tagsRes.json()) as OllamaTagsResponse;
       const installed = new Set((tags.models ?? []).map((m) => m.name).filter(Boolean) as string[]);
