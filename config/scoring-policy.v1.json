@@ -1,0 +1,26 @@
+{
+  "version": "scoring-policy.v1",
+  "weights": {
+    "deterministic": 0.25,
+    "semantic": 0.35,
+    "llmFit": 0.4
+  },
+  "thresholds": {
+    "mustHaveCoverageMin": 0.65,
+    "semanticSimilarityMin": 0.62
+  },
+  "decisionBands": {
+    "apply_strong": {
+      "scoreMin": 78,
+      "confidenceMin": 0.72,
+      "mustHaveMin": 0.65
+    },
+    "apply_borderline": {
+      "scoreMin": 62,
+      "scoreMax": 77
+    },
+    "skip": {
+      "scoreMax": 61
+    }
+  }
+}

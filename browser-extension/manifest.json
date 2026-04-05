@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "ATS Engine — JD capture",
+  "version": "1.0.0",
+  "description": "Click the floating button to capture job description text and open the local ATS Engine UI.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["http://127.0.0.1:3847/*", "http://localhost:3847/*"],
+  "action": {
+    "default_title": "ATS Engine: open local UI"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

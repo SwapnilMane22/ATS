@@ -1,0 +1,3 @@
+{"applicationId":"app-001","candidateId":"cand-001","jdId":"jd-001","finalScore":82,"confidence":0.78,"decisionBand":"apply_strong","outcome":"interview"}
+{"applicationId":"app-002","candidateId":"cand-001","jdId":"jd-002","finalScore":69,"confidence":0.63,"decisionBand":"apply_borderline","outcome":"screen"}
+{"applicationId":"app-003","candidateId":"cand-001","jdId":"jd-003","finalScore":52,"confidence":0.41,"decisionBand":"skip","outcome":"rejected"}

@@ -1,5 +1,5 @@
 import type { BulletClassificationRequest, BulletClassificationResult, BulletRewriteRequest, BulletRewriteResult, FitExplanationRequest, FitExplanationResult, JdNormalized, JdRawInput } from "./schemas/index.js";
-export type LLMClientKind = "local" | "vendor";
+export type LLMClientKind = "local" | "portfolio";
 export interface LLMClient {
     readonly kind: LLMClientKind;
     readonly name: string;

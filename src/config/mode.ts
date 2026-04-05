@@ -5,6 +5,9 @@ import { PortfolioLLMClient } from "../llm/PortfolioLLMClient.js";
 
 export type AtsMode = "local" | "portfolio";
 
+/** Default when `ATS_LOCAL_MODEL` is unset — Gemma 4 26B MoE via Ollama (`ollama pull gemma4:26b`). */
+export const DEFAULT_LOCAL_OLLAMA_MODEL = "gemma4:26b";
+
 export interface AtsEngineConfig {
   mode: AtsMode;
   localModel?: string | undefined;
@@ -26,7 +29,7 @@ export function createLLMClientFromConfig(cfg: AtsEngineConfig): LLMClient {
   }
 
   const primaryLocalClient = new OllamaLLMClient({
-    model: cfg.localModel ?? "qwen2.5-coder:7b",
+    model: cfg.localModel ?? DEFAULT_LOCAL_OLLAMA_MODEL,
   });
 
   const fallbackEnabled =

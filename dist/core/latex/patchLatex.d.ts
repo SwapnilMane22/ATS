@@ -2,6 +2,9 @@ import type { ResumeDocument } from "../resume/types.js";
 export type LatexPatchOp = {
     kind: "replace_bullet";
     bulletId: string;
+    /** Clean plaintext of the original bullet (from parseLatexResume) */
+    originalText: string;
+    /** Clean plaintext replacement from LLM — NO LaTeX escapes needed */
     newText: string;
 } | {
     kind: "insert_bullet_after";
@@ -17,13 +20,16 @@ export interface ApplyLatexPatchResult {
     }>;
 }
 /**
- * Applies patch operations to LaTeX by matching bullets using `bulletId` markers.
+ * Applies patch operations to LaTeX source.
  *
- * NOTE: This requires that the LaTeX contains bulletId markers to make patching reliable.
- * In v1, we support an inline marker convention:
- *   \\item ... % bulletId:b_xxxxx
+ * Match priority per bullet:
+ *  1. `% bulletId:xx` inline comment markers (if present in source)
+ *  2. Normalised text match of `originalText` against raw \item line content
+ *  3. Stripped-text match (LaTeX escapes removed)
+ *  4. Prefix substring match (first 60 chars)
  *
- * If markers are missing, ops are skipped.
+ * On match, the new text is sanitized for LaTeX and the original line's
+ * trailing LaTeX layout suffix (e.g. \\[-6pt]) is preserved.
  */
 export declare function applyLatexPatch(resume: ResumeDocument, ops: LatexPatchOp[]): ApplyLatexPatchResult;
 //# sourceMappingURL=patchLatex.d.ts.map

@@ -15,15 +15,52 @@ function normalizeWhitespace(s) {
     return s.replace(/\s+/g, " ").trim();
 }
 /**
+ * Strip LaTeX markup from a section title to get clean display text.
+ * Handles: \href{url}{text} → text, \textbf{x} → x, \MakeUppercase{x} → x, {x} → x
+ */
+function cleanSectionTitle(raw) {
+    let s = raw;
+    // \href{url}{display} → display
+    s = s.replace(/\\href\{[^}]*\}\{([^}]*)\}/g, "$1");
+    // \textbf{x}, \textit{x}, \MakeUppercase{x} etc → x
+    s = s.replace(/\\[a-zA-Z]+\{([^}]*)\}/g, "$1");
+    // bare {x} → x
+    s = s.replace(/\{([^}]*)\}/g, "$1");
+    // strip remaining backslash commands
+    s = s.replace(/\\[a-zA-Z]+/g, " ");
+    return normalizeWhitespace(s);
+}
+/**
+ * Strip LaTeX layout suffixes from the end of a bullet line.
+ * These are spacing/visual commands that are NOT part of the bullet content:
+ *   \\[-6pt]   \\[2pt]   \\[4pt]   \\   \newline   \hfill etc.
+ *
+ * Returns { text: cleanText, suffix: latexSuffix }
+ * The suffix must be preserved when patching so the LaTeX layout is unchanged.
+ */
+export function splitBulletSuffix(raw) {
+    // Match trailing LaTeX layout commands at end of the bullet:
+    //  - \\[-6pt]  \\[4pt]  \\   (line break with optional spacing arg)
+    //  - \newline
+    //  - \hfill  (used in some templates)
+    const suffixPattern = /(\s*(\\\\(\[[-0-9a-z.]+\])?|\\newline\b|\\hfill\b)\s*)+$/i;
+    const match = raw.match(suffixPattern);
+    if (match) {
+        const suffix = match[0];
+        const text = raw.slice(0, raw.length - suffix.length).trimEnd();
+        return { text, suffix };
+    }
+    return { text: raw, suffix: "" };
+}
+/**
  * Minimal LaTeX resume parser.
  *
  * Supported:
- * - \\section{Title} and \\subsection{Title}
- * - itemize/enumerate with \\item bullets
+ * - \section{Title} and \subsection{Title}
+ * - itemize/enumerate with \item bullets
  *
- * Output:
- * - sections with hierarchical paths
- * - bullets with stable IDs and section paths
+ * Bullet text stored is clean plaintext (LaTeX layout suffixes stripped).
+ * The raw line remains in rawText for faithful patch-back.
  */
 export function parseLatexResume(latex, opts = {}) {
     const seed = opts.idSeed ?? "ats-engine-v1";
@@ -38,18 +75,20 @@ export function parseLatexResume(latex, opts = {}) {
             continue;
         if (line.startsWith("%"))
             continue; // comment
-        const sec = line.match(/^\\section\{(.+)\}$/);
+        // \section{...}  — note: also handles \section*{...} and \section{\href{...}{...}}
+        const sec = line.match(/^\\section\*?\{(.+)\}$/);
         if (sec) {
-            currentSectionPath = [normalizeWhitespace(sec[1] ?? "")];
+            const cleanTitle = cleanSectionTitle(sec[1] ?? "");
+            currentSectionPath = [cleanTitle];
             sections.push({
-                title: currentSectionPath[0],
+                title: cleanTitle,
                 path: [...currentSectionPath],
             });
             continue;
         }
         const subsec = line.match(/^\\subsection\{(.+)\}$/);
         if (subsec) {
-            const title = normalizeWhitespace(subsec[1] ?? "");
+            const title = cleanSectionTitle(subsec[1] ?? "");
             currentSectionPath = [currentSectionPath[0] ?? "Uncategorized", title];
             sections.push({ title, path: [...currentSectionPath] });
             continue;
@@ -64,11 +103,19 @@ export function parseLatexResume(latex, opts = {}) {
         }
         const item = line.match(/^\\item\s+(.+)$/);
         if (item && inListDepth > 0) {
-            const text = normalizeWhitespace(item[1] ?? "");
+            const rawContent = item[1] ?? "";
+            // Strip trailing LaTeX layout suffixes — keep only printable content
+            const { text: cleanText } = splitBulletSuffix(rawContent);
+            // cleanText still contains LaTeX escapes (\$, \%, etc.) — this is rawLatex
+            const text = normalizeWhitespace(cleanText);
+            if (!text)
+                continue; // skip empty
             const bulletId = stableId(seed, currentSectionPath, text);
             bullets.push({
                 bulletId,
                 text,
+                // Preserve the LaTeX-escaped form for LLM input (before whitespace normalization)
+                rawLatex: cleanText.trim(),
                 sectionPath: [...currentSectionPath],
             });
             continue;

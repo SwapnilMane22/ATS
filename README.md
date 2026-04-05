@@ -1,162 +1,186 @@
 # ATS Engine
 
-ATS Engine is a resume scoring and JD-fit analysis system designed with a **deterministic core + optional LLM enrichment**.
+Resume scoring and job-description fit analysis with a **deterministic core**, optional **local Ollama** LLM calls, and optional **cloud fallback** (OpenRouter / Gemini via `portfolio-backend`).
 
-## Current design (simplified)
+---
 
-The runtime design is now intentionally simple:
+## Contents
 
-- **Primary LLM path:** local **Ollama** (`ATS_MODE=local`)
-- **Optional fallback path:** **portfolio-backend LLM client** (OpenRouter/Gemini) when local fails and keys exist
-- **No local task-router mode in active flow**
+1. [Quick start](#quick-start)
+2. [How it works](#how-it-works)
+3. [Commands](#commands)
+4. [Configuration](#configuration)
+5. [Web UI and HTTP API](#web-ui-and-http-api)
+6. [Portfolio paths and candidate name](#portfolio-paths-and-candidate-name)
+7. [Ollama models](#ollama-models)
+8. [CLI examples](#cli-examples)
+9. [Reports, policy, and calibration](#reports-policy-and-calibration)
+10. [Evaluation harness](#evaluation-harness)
+11. [Troubleshooting](#troubleshooting)
+12. [Limits vs enterprise ATS](#limits-vs-enterprise-ats)
 
-This matches your goal: **Ollama first, portfolio fallback optionally, nothing else in the normal path**.
+---
 
-## System design
-
-1. Input parsing
-- Parse LaTeX resume into `sections` + `bullets` with stable `bulletId`s.
-- File: `src/core/latex/parseLatex.ts`
-
-2. Deterministic ATS scoring
-- Structure + bullet-quality rubric (sections, action verbs, metrics, weak-verb penalty).
-- File: `src/core/scoring/rubric.ts`
-
-3. Optional LLM enrichment
-- Role/competency classification from bullets.
-- JD normalization and JD-fit explanation.
-- Files: `src/core/roles/classifyWithLLM.ts`, `src/core/jd/fitWithLLM.ts`
-
-4. Optional deterministic JD fit (no LLM)
-- Keyword-overlap style coverage against JD text.
-- File: `src/core/jd/fitDeterministic.ts`
-
-## Semantic matching status (important)
-
-Are we doing semantic resume↔JD matching already?
-
-- **With LLM + JD:** **Yes (partially semantic)**  
-  `fitWithLLM` uses normalized JD requirements + evidence mapping from bullets. This is semantic-ish because the model reasons over meaning and not only exact keywords.
-
-- **Without LLM + JD:** **No (not truly semantic)**  
-  `fitDeterministic` is currently keyword-overlap based. It is useful and fast, but not deep semantic matching.
-
-If you want stronger semantic matching without cloud APIs, next step is local embeddings + vector similarity (Ollama embeddings model) for requirement-to-bullet matching.
-
-## Design principles
-
-- Deterministic baseline first
-- Strict schema validation for every LLM output (`zod`)
-- Evidence-driven outputs (bullet IDs / coverage artifacts)
-- Local-first operation (Ollama)
-- Fallback for resilience (portfolio OpenRouter/Gemini client)
-
-## Tech stack
-
-- TypeScript (Node)
-- `zod` schemas for strict output validation
-- Ollama local inference (`/api/chat`)
-- Portfolio shared LLM client (`portfolio-backend/llm`) for fallback
-
-## Real-world usability
-
-Why this is already useful for real job applications:
-
-- Fast baseline score without model calls
-- Repeatable outputs and explicit gates
-- JD-fit explanation with requirement coverage (LLM mode)
-- Can run fully local with Ollama
-
-## Drawbacks and gap vs Workday/Greenhouse ATS
-
-This engine is strong for personal optimization, but it is **not equivalent** to enterprise ATS stacks yet.
-
-Current gaps:
-
-- No parsing for DOCX/PDF production variance at enterprise scale
-- No company-specific screening rule packs
-- No recruiter workflow integration, candidate pipeline state, audit, permissions
-- Deterministic no-LLM JD fit is keyword-based (not deep semantic)
-- Limited anti-gaming and calibration dataset coverage
-
-Will it fail vs industry ATS in some cases? **Yes**, especially on edge document formats and enterprise-specific screening logic.
-
-## Path to industry-grade proficiency
-
-1. Add robust multi-format parser (PDF/DOCX) + normalization
-2. Add local embedding-based semantic matcher (requirement↔bullet similarity)
-3. Add benchmark set (100+ resumes/JDs) and track precision/recall for match decisions
-4. Add evaluation harness comparing deterministic vs LLM vs hybrid outputs
-5. Add explainability artifacts per score decision (already partly present)
-
-## Install
+## Quick start
 
 ```bash
-npm i
+cd "ATS Engine"
+npm install
+cp .env.example .env   # edit paths + ATS_LOCAL_MODEL if needed
+ollama serve           # separate terminal; pull the default local model: ollama pull gemma4:26b
+npm run ui:build       # build the local web UI (required after UI changes)
+npm run ats:serve      # API + UI at http://127.0.0.1:3847
 ```
 
-## Environment setup
+Optional: copy `portfolio/backend/.env.example` → `portfolio/backend/.env` and set `PORTFOLIO_DATA_DIR` so the portfolio chatbot uses the same `knowledge.json` folder as ATS.
 
-### Local-first (recommended)
+---
+
+## How it works
+
+| Layer | Role | Main code |
+|--------|------|-----------|
+| Parse | LaTeX → sections + bullets (`bulletId`) | `src/core/latex/parseLatex.ts` |
+| Score | Deterministic rubric (structure, verbs, metrics) | `src/core/scoring/rubric.ts` |
+| JD (no LLM) | Keyword-style coverage | `src/core/jd/fitDeterministic.ts` |
+| JD (semantic) | Embeddings similarity (when enabled) | `src/core/jd/semanticFit.ts` |
+| LLM | Normalize JD, classify bullets, explain fit, suggest rewrites | `src/core/roles/`, `src/core/jd/`, `src/llm/` |
+| Tailoring | Safe rewrites + optional `pdflatex` PDF | `src/core/tailor/`, `src/core/assets/tailoredResumeWriter.ts` |
+
+**Modes** (`ATS_MODE`):
+
+- **`local`** (default): **Ollama** primary (`OllamaLLMClient`). Optional **portfolio** fallback if `ATS_LOCAL_FALLBACK_PORTFOLIO` is on and API keys exist (`FallbackLLMClient`).
+- **`portfolio`**: cloud only (`PortfolioLLMClient`).
+
+**Design principles:** deterministic baseline first, `zod` validation on LLM JSON, evidence tied to bullet IDs, local-first with optional cloud resilience.
+
+---
+
+## Commands
+
+| Script | Purpose |
+|--------|---------|
+| `npm run ats:serve` | HTTP server: UI static files + `/api/*` (default port **3847**) |
+| `npm run ats` | CLI: `tsx src/cli/run.ts` — see [CLI examples](#cli-examples) |
+| `npm run ats:local` | CLI with `ATS_MODE=local` |
+| `npm run ats:portfolio` | CLI with `ATS_MODE=portfolio` |
+| `npm run ats:evaluate` | Batch evaluation on `eval/datasets/*.jsonl` |
+| `npm run ui:build` | Production-build Vite UI into `ui/dist` |
+| `npm run build` | TypeScript compile (`tsc`) |
+| `npm run typecheck` | `tsc --noEmit` |
+
+---
+
+## Configuration
+
+### `.env` loading
+
+`src/loadEnv.ts` loads **`ATS Engine/.env`** with **`override: true`** so values in `.env` beat stray shell exports (e.g. an old `ATS_LOCAL_MODEL` in your profile). Logging from dotenv is suppressed (`quiet: true`).
+
+### Environment variables (reference)
+
+| Variable | Purpose |
+|----------|---------|
+| `PORTFOLIO_DATA_DIR` | Absolute path to folder containing `main.tex` and `knowledge.json` |
+| `ATS_DEFAULT_RESUME` | Optional full path to `.tex` (overrides default `main.tex` under `PORTFOLIO_DATA_DIR`) |
+| `ATS_LOCAL_MODEL` | Ollama model tag (must exist in `ollama list`) |
+| `ATS_OLLAMA_BASE_URL` | Default `http://127.0.0.1:11434` |
+| `ATS_OLLAMA_TIMEOUT_MS` | Default `300000` |
+| `ATS_OLLAMA_FALLBACK_MODELS` | Comma-separated fallbacks if primary missing |
+| `ATS_MODE` | `local` or `portfolio` |
+| `ATS_LOCAL_FALLBACK_PORTFOLIO` | `1` / `0` — use OpenRouter/Gemini when local fails |
+| `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, … | Same as portfolio backend for fallback |
+| `ATS_USER_FIRST_NAME`, `ATS_USER_LAST_NAME` | Optional override for tailoring name |
+| `ATS_SERVER_PORT` | Default `3847` |
+| `ATS_PDFLATEX` | Optional **full path** to `pdflatex` if the server cannot find it (e.g. GUI/IDE missing shell `PATH`) |
+| `ATS_DEBUG_LLM`, `ATS_MAX_TOKENS`, `ATS_TEMPERATURE`, `ATS_BULLET_CHUNK_SIZE`, `ATS_LLM_FIT_PASSES` | Operational tuning |
+
+---
+
+## Web UI and HTTP API
+
+- **UI:** served from `ui/dist` when you run `npm run ats:serve`. After changing `ui/src`, run **`npm run ui:build`** and hard-refresh the browser (or use Vite dev server separately if you add one).
+- **Candidate name** is shown from config (no manual first/last fields); sourced from `knowledge.json` / `main.tex` (see below).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | `{ ok, service, port }` |
+| GET | `/api/config` | Paths, **runtime** (Ollama, model pulled, fallback), **candidate name** |
+| GET | `/api/status` | Runtime only (no portfolio paths) |
+| POST | `/api/analyze` | Body: `jdText`, optional `resumePath`, `company`, `jobRole`, `skipLlm`, … |
+| POST | `/api/save-tweaked` | Save generated TeX under `assets/latex` |
+
+---
+
+## Portfolio paths and candidate name
+
+- Default layout assumes a sibling repo: **`../portfolio/backend/data/`** with `main.tex` and `knowledge.json`.
+- Override with **`PORTFOLIO_DATA_DIR`** (set on both ATS Engine and `portfolio/backend` for consistency).
+- **Candidate name** for tailored output: `resolveCandidateName()` in `src/candidateIdentity.ts` — prefers **`about.name`** in `knowledge.json`, else first `\textbf{{...}}` name in the LaTeX header. CLI can still pass **`--first-name` / `--last-name`**; env **`ATS_USER_*`** overrides.
+
+---
+
+## Ollama models
+
+There is no separate “reasoning mode” flag: quality follows **`ATS_LOCAL_MODEL`** and optional **`ATS_OLLAMA_FALLBACK_MODELS`**. All LLM calls request JSON from Ollama (`format: "json"`).
+
+| Goal | Examples |
+|------|----------|
+| **Default (recommended)** | `gemma4:26b` — Gemma 4 26B MoE (Ollama); large context, strong for JD/resume JSON tasks |
+| Lighter / faster | `qwen2.5:7b-instruct`, `qwen2.5:14b-instruct` |
+| Code-heavy side tasks only | `qwen2.5-coder:7b` — weaker on strict JSON; not preferred for ATS pipelines |
+| Reasoning-style (often slower) | `deepseek-r1:8b` (tags vary; check `ollama library`) |
+
+**Hardware:** Apple Silicon (e.g. M3 Pro) is comfortable with **7B–14B**; NVIDIA laptops often allow **larger** quantizations. Use `ollama list` to confirm what is installed.
+
+---
+
+## CLI examples
+
+Run from `ATS Engine` root. Reports go under **`reports/`** (filename from `--out`).
+
+| Scenario | Command |
+|----------|---------|
+| Resume only, no LLM | `npm run ats -- --resume ../portfolio/backend/data/main.tex --skip-llm --out report_nojd_nollm.json` |
+| Resume + LLM | `npm run ats -- --resume ../portfolio/backend/data/main.tex --out report_nojd_llm.json` |
+| Resume + JD file, no LLM | `npm run ats -- --resume ../portfolio/backend/data/main.tex --jd ./sampleJD/InfraAI.txt --skip-llm --out report_jd_nollm.json` |
+| Full pipeline | `npm run ats -- --resume ../portfolio/backend/data/main.tex --jd ./sampleJD/InfraAI.txt --out report_jd_llm.json` |
+
+JD text can be passed inline for the server/UI; CLI expects a file for `--jd`.
+
+---
+
+## Reports, policy, and calibration
+
+- **Policy file:** `config/scoring-policy.v1.json` (override path: `ATS_SCORING_POLICY_PATH`).
+- Reports include policy metadata, `opportunityAssessment` (band, confidence, uncertainty), `decisionTrace`, multi-pass LLM summaries where applicable, and `complianceAudit` flags.
+
+---
+
+## Evaluation harness
 
 ```bash
-export ATS_MODE=local
-export ATS_LOCAL_MODEL=qwen2.5:14b-instruct
-export ATS_OLLAMA_BASE_URL=http://127.0.0.1:11434
+npm run ats:evaluate -- --input eval/datasets/applications.jsonl --out reports/eval_summary.json
 ```
 
-Optional fallback to portfolio-backed providers:
+Dataset format: `eval/datasets/applications.jsonl` with fields such as `applicationId`, `candidateId`, `jdId`, scores, `outcome`.
 
-```bash
-export ATS_LOCAL_FALLBACK_PORTFOLIO=1
-export OPENROUTER_API_KEY="..."
-export GEMINI_API_KEY="..."
-```
+---
 
-### Portfolio-only mode (no local model)
+## Troubleshooting
 
-```bash
-export ATS_MODE=portfolio
-```
+| Symptom | What to do |
+|---------|------------|
+| **`◇ injecting env (N) from .env`** in the terminal | **Informational** (dotenv). Suppressed in code via `quiet: true`. Not a failure. |
+| **`HTTP 404` / model not found** from Ollama | Set `ATS_LOCAL_MODEL` in `.env` to a model from `ollama list`, or run `ollama pull <model>`. |
+| **`412` or failed pull for `gemma4:26b`** | Upgrade **Ollama** to **0.20+** (Gemma 4 needs a recent client). Then `ollama pull gemma4:26b` again. |
+| **UI still shows old fields (e.g. first/last name)** | Run **`npm run ui:build`**, restart `ats:serve`, hard-refresh the browser. |
+| **Stale env vars** | `.env` uses **override**; restart the server after editing `.env`. |
+| **Analysis hangs on “Running…”** | Large models or long JDs take time; raise `ATS_OLLAMA_TIMEOUT_MS` if needed. Check **Engine status** on the UI for Ollama reachability. |
+| **`spawn tectonic ENOENT` or empty PDF panes** | The Node process cannot find the `tectonic` executable. Install it via `brew install tectonic` on macOS, **restart** `ats:serve`, or set **`ATS_TECTONIC_PATH=/opt/homebrew/bin/tectonic`** in `ATS Engine/.env`. |
 
-Uses same env names as portfolio backend:
-- `OPENROUTER_API_KEY`, `OPENROUTER_API_BASE_URL`, `CHAT_MODELS` / `CHAT_MODEL`
-- `GEMINI_API_KEY`, `GEMINI_MODELS` / `GEMINI_MODEL`
+---
 
-## 4 test commands
+## Limits vs enterprise ATS
 
-Run from `ATS Engine` root.  
-Example resume path: `../portfolio/backend/data/main.tex`
-
-1) Score resume **without JD, without LLM**
-```bash
-npm run ats -- --resume ../portfolio/backend/data/main.tex --skip-llm --out report_nojd_nollm.json
-```
-
-2) Score resume **without JD, with LLM**
-```bash
-ATS_MODE=local ATS_LOCAL_MODEL=qwen2.5-coder:7b npm run ats -- --resume ../portfolio/backend/data/main.tex --out report_nojd_llm.json
-```
-
-3) Score resume **with JD, without LLM**
-```bash
-npm run ats -- --resume ../portfolio/backend/data/main.tex --jd ./sampleJD/InfraAI.txt --skip-llm --out report_jd_nollm.json
-```
-
-4) Score resume **with JD, with LLM**
-```bash
-ATS_MODE=local ATS_LOCAL_MODEL=qwen2.5-coder:7b npm run ats -- --resume ../portfolio/backend/data/main.tex --jd ./sampleJD/InfraAI.txt --out report_jd_llm.json
-```
-
-All scoring reports are written under `ATS Engine/reports/`.  
-If `--out` is provided, only the filename is used and it is saved inside `reports/`.
-
-## Operational notes
-
-- For debugging model routing/errors:
-  - `ATS_DEBUG_LLM=1`
-- For larger outputs:
-  - `ATS_MAX_TOKENS` (default `16384`)
-  - `ATS_BULLET_CHUNK_SIZE` (default `12`)
-  - `ATS_OLLAMA_TIMEOUT_MS` (default `300000`) for slower local models
-
+Useful for personal optimization and repeatable scoring; **not** a drop-in replacement for Workday/Greenhouse-style ATS: limited DOCX/PDF variance handling, no employer-specific rule packs, no recruiter workflow or permissions model. See codebase comments for semantic-matching roadmap (e.g. stronger local embeddings).
