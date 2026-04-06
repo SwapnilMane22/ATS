@@ -77,6 +77,7 @@ export class OllamaLLMClient extends AbstractLLMClient {
         format: "json",
         options: {
           temperature: Number(process.env.ATS_TEMPERATURE ?? "0.2"),
+          num_ctx: 8192,
         },
         messages: [
           { role: "system", content: system },

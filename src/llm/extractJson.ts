@@ -83,10 +83,21 @@ export function extractJsonValue(text: string): unknown {
     if (startObj >= 0 && startArr >= 0) start = Math.min(startObj, startArr);
     else if (startObj >= 0) start = startObj;
     else if (startArr >= 0) start = startArr;
-    else throw new Error("No JSON object or array found in model output");
+    else {
+      const dump = candidate.length > 0 ? candidate.slice(0, 150) + "..." : "<empty string>";
+      throw new Error(`No JSON object or array found in model output. Output was: ${dump}`);
+    }
 
     const end = findBalancedJsonEnd(candidate, start);
-    if (end < 0 || end <= start) throw new Error("Invalid JSON span in model output");
-    return tryParse(candidate.slice(start, end + 1)) as unknown;
+    if (end < 0 || end <= start) {
+      const dump = candidate.length > 0 ? candidate.slice(0, 300) + "..." : "<empty>";
+      throw new Error(`Invalid JSON span in model output. Output was: ${dump}`);
+    }
+    try {
+      return tryParse(candidate.slice(start, end + 1)) as unknown;
+    } catch (e) {
+      const dump = candidate.slice(start, start + 300) + "...";
+      throw new Error(`Balanced JSON found but failed to parse: ${e instanceof Error ? e.message : String(e)}. Output was: ${dump}`);
+    }
   }
 }

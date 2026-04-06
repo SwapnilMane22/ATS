@@ -5,8 +5,8 @@ import { PortfolioLLMClient } from "../llm/PortfolioLLMClient.js";
 
 export type AtsMode = "local" | "portfolio";
 
-/** Default when `ATS_LOCAL_MODEL` is unset — Gemma 4 26B MoE via Ollama (`ollama pull gemma4:26b`). */
-export const DEFAULT_LOCAL_OLLAMA_MODEL = "gemma4:26b";
+/** Default when `ATS_LOCAL_MODEL` is unset — Gemma 4 e4b via Ollama (`ollama pull gemma4:e4b`). */
+export const DEFAULT_LOCAL_OLLAMA_MODEL = "gemma4:e4b";
 
 export interface AtsEngineConfig {
   mode: AtsMode;
